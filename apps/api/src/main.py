@@ -76,50 +76,61 @@ async def run_fallback_pipeline(image_bytes: bytes, emit, agent_metadata):
     else:
         await emit({"agent": "quality_heuristic", "status": "completed"})
 
-    stages = [
-        ("recognize_food", {
-            "foods": [
-                {"name": "Grilled Chicken & Quinoa Bowl", "confidence": 0.92},
-                {"name": "Avocado Salad", "confidence": 0.86}
-            ]
-        }, 650),
-        ("analyze_ingredients", {
-            "ingredients": [
-                {"name": "Chicken Breast", "estimated_amount": "150g", "confidence": 0.91},
-                {"name": "Cooked Quinoa", "estimated_amount": "1 cup (185g)", "confidence": 0.88},
-                {"name": "Sliced Avocado", "estimated_amount": "1/2 medium", "confidence": 0.85},
-                {"name": "Cherry Tomatoes", "estimated_amount": "50g", "confidence": 0.82}
-            ]
-        }, 800),
-        ("estimate_nutrition", {
-            "nutrition": {
-                "calories": {"value": 540.0, "confidence": 0.88},
-                "protein": {"value": 42.0, "confidence": 0.90},
-                "carbs": {"value": 45.0, "confidence": 0.85},
-                "fat": {"value": 18.0, "confidence": 0.82},
-                "fiber": {"value": 8.0, "confidence": 0.80},
-                "sugar": {"value": 4.0, "confidence": 0.84},
-                "sodium": {"value": 620.0, "confidence": 0.81}
-            }
-        }, 750),
-        ("check_quality", {
-            "quality": {
-                "valid": True,
-                "warnings": [],
-                "adjusted_confidence": {"overall": 0.86}
-            }
-        }, 500)
-    ]
+    try:
+        from ai_agents.models.llm_provider import GeminiVisionModel
+        from ai_agents.agents.food_recognition import FoodRecognitionAgent
+        from ai_agents.agents.ingredient_analysis import IngredientAnalysisAgent
+        from ai_agents.agents.nutrition_estimation import NutritionEstimationAgent
 
-    accumulated = {}
-    for node_name, data, delay_ms in stages:
-        await emit({"agent": node_name, "status": "running"})
-        await asyncio.sleep(delay_ms / 1000.0)
-        accumulated.update(data)
-        agent_metadata.append({"agent": node_name, "latency_ms": delay_ms})
-        await emit({"agent": node_name, "status": "completed", "latency_ms": delay_ms, "data": data})
+        model = GeminiVisionModel()
+        
+        # 1. Food Recognition
+        s1 = time.time()
+        await emit({"agent": "recognize_food", "status": "running"})
+        food_agent = FoodRecognitionAgent(model)
+        state1 = await food_agent.run({"image_bytes": image_bytes, "metadata": {}})
+        foods = [f.model_dump() for f in state1.get("foods", [])]
+        l1 = int((time.time() - s1) * 1000)
+        agent_metadata.append({"agent": "recognize_food", "latency_ms": l1})
+        await emit({"agent": "recognize_food", "status": "completed", "latency_ms": l1, "data": {"foods": foods}})
 
-    return accumulated
+        # 2. Ingredient Analysis
+        s2 = time.time()
+        await emit({"agent": "analyze_ingredients", "status": "running"})
+        ing_agent = IngredientAnalysisAgent(model)
+        state2 = await ing_agent.run({"foods": state1.get("foods", []), "metadata": {}})
+        ingredients = [i.model_dump() for i in state2.get("ingredients", [])]
+        l2 = int((time.time() - s2) * 1000)
+        agent_metadata.append({"agent": "analyze_ingredients", "latency_ms": l2})
+        await emit({"agent": "analyze_ingredients", "status": "completed", "latency_ms": l2, "data": {"ingredients": ingredients}})
+
+        # 3. Nutrition Estimation
+        s3 = time.time()
+        await emit({"agent": "estimate_nutrition", "status": "running"})
+        nut_agent = NutritionEstimationAgent(model)
+        state3 = await nut_agent.run({"ingredients": state2.get("ingredients", []), "metadata": {}})
+        nutrition = state3.get("nutrition").model_dump() if state3.get("nutrition") else None
+        l3 = int((time.time() - s3) * 1000)
+        agent_metadata.append({"agent": "estimate_nutrition", "latency_ms": l3})
+        await emit({"agent": "estimate_nutrition", "status": "completed", "latency_ms": l3, "data": {"nutrition": nutrition}})
+
+        # 4. Quality Control
+        s4 = time.time()
+        await emit({"agent": "check_quality", "status": "running"})
+        quality = {"valid": True, "warnings": warnings, "adjusted_confidence": {"overall": 0.88}}
+        l4 = int((time.time() - s4) * 1000)
+        agent_metadata.append({"agent": "check_quality", "latency_ms": l4})
+        await emit({"agent": "check_quality", "status": "completed", "latency_ms": l4, "data": {"quality": quality}})
+
+        return {
+            "foods": foods,
+            "ingredients": ingredients,
+            "nutrition": nutrition,
+            "quality": quality
+        }
+    except Exception as e:
+        logger.error(f"Error executing real AI model pipeline: {e}")
+        raise RuntimeError(f"Failed to analyze food image with Gemini API: {e}")
 
 async def process_analysis_job(job_id: str, image_bytes: bytes, storage_id: str):
     start_time = time.time()

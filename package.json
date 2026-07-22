@@ -16,5 +16,8 @@
     "lint": "npm run lint --workspace=apps/web",
     "start": "npm run dev:web",
     "build": "npm run build:web"
+  },
+  "dependencies": {
+    "@google/genai": "^2.13.0"
   }
 }

@@ -33,20 +33,24 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(data, { status: backendRes.status });
         }
       } catch (err) {
-        console.warn(`Backend proxy to ${apiUrl} failed, using local simulation:`, err);
+        console.warn(`Backend proxy to ${apiUrl} failed, using local fallback:`, err);
       }
     }
 
-    // Local fallback when FastAPI backend is not running
+    // Local execution when FastAPI backend is not accessible directly
     const jobId = typeof crypto !== "undefined" && crypto.randomUUID 
       ? crypto.randomUUID() 
       : `job-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
     createLocalJob({
       jobId,
       filename: file.name,
       sizeBytes: file.size,
-      contentType: file.type,
+      contentType: file.type || "image/jpeg",
+      base64Image,
     });
 
     return NextResponse.json({ job_id: jobId });

@@ -3,6 +3,7 @@ export interface LocalJobData {
   filename: string;
   sizeBytes: number;
   contentType: string;
+  base64Image?: string;
   createdAt: number;
 }
 
