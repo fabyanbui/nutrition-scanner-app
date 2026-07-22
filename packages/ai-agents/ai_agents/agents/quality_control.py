@@ -17,15 +17,16 @@ class QualityControlAgent:
         
         nutrition = state.get("nutrition")
         
-        if nutrition:
+        if nutrition and hasattr(nutrition, "protein") and hasattr(nutrition, "carbs") and hasattr(nutrition, "fat") and hasattr(nutrition, "calories"):
+            protein_val = getattr(nutrition.protein, "value", 0) if nutrition.protein else 0
+            carbs_val = getattr(nutrition.carbs, "value", 0) if nutrition.carbs else 0
+            fat_val = getattr(nutrition.fat, "value", 0) if nutrition.fat else 0
+            cal_val = getattr(nutrition.calories, "value", 0) if nutrition.calories else 0
+
             # Heuristic: 1g protein/carbs = 4 kcal, 1g fat = 9 kcal
-            total_macros_kcal = (
-                nutrition.protein.value * 4 +
-                nutrition.carbs.value * 4 +
-                nutrition.fat.value * 9
-            )
+            total_macros_kcal = (protein_val * 4) + (carbs_val * 4) + (fat_val * 9)
             
-            if nutrition.calories.value > 0 and abs(total_macros_kcal - nutrition.calories.value) > (0.3 * nutrition.calories.value):
+            if cal_val > 0 and abs(total_macros_kcal - cal_val) > (0.3 * cal_val):
                 warnings.append("Macro values do not align with total calories.")
                 valid = False
                 

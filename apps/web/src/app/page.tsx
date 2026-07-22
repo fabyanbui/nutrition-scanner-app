@@ -317,7 +317,7 @@ export default function Home() {
                           <div key={key} className={`p-4 rounded-xl border ${isCalories ? 'bg-orange-50 border-orange-100 col-span-2 sm:col-span-1' : 'bg-white border-gray-200'}`}>
                             <div className="text-sm text-gray-500 capitalize">{key}</div>
                             <div className={`font-bold mt-1 mb-2 ${isCalories ? 'text-3xl text-orange-700' : 'text-xl text-gray-900'}`}>
-                              {data.value} {isCalories ? 'kcal' : 'g'}
+                              {data.value} {isCalories ? 'kcal' : key === 'sodium' ? 'mg' : 'g'}
                             </div>
                             {renderConfidenceBadge(data.confidence)}
                           </div>

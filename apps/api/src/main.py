@@ -50,7 +50,7 @@ job_queues: Dict[str, asyncio.Queue] = {}
 class JobCreateResponse(BaseModel):
     job_id: str
 
-async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession, storage_id: str):
+async def process_analysis_job(job_id: str, image_bytes: bytes, storage_id: str):
     start_time = time.time()
     queue = job_queues.get(job_id)
     
@@ -82,9 +82,11 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             
         node_start_times = {}
         last_node = None
+        accumulated_state = dict(initial_state)
         
         async for output in workflow.app.astream(initial_state, stream_mode="updates"):
             for node_name, state_update in output.items():
+                accumulated_state.update(state_update)
                 if last_node:
                     latency = int((time.time() - node_start_times[last_node]) * 1000)
                     agent_metadata.append({"agent": last_node, "latency_ms": latency})
@@ -116,43 +118,44 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             agent_metadata.append({"agent": last_node, "latency_ms": latency})
             await emit({"agent": last_node, "status": "completed", "latency_ms": latency})
 
-        final_state = await workflow.app.ainvoke(initial_state)
         total_latency = int((time.time() - start_time) * 1000)
         
         result_payload = {
-            "foods": [f.model_dump() for f in final_state.get("foods", [])],
-            "ingredients": [i.model_dump() for i in final_state.get("ingredients", [])],
-            "nutrition": final_state.get("nutrition").model_dump() if final_state.get("nutrition") else None,
-            "quality": final_state.get("quality").model_dump() if final_state.get("quality") else None,
+            "foods": [f.model_dump() for f in accumulated_state.get("foods", [])],
+            "ingredients": [i.model_dump() for i in accumulated_state.get("ingredients", [])],
+            "nutrition": accumulated_state.get("nutrition").model_dump() if accumulated_state.get("nutrition") else None,
+            "quality": accumulated_state.get("quality").model_dump() if accumulated_state.get("quality") else None,
             "processing_time_ms": total_latency
         }
 
-        stmt = select(Job).where(Job.id == job_id)
-        res = await db.execute(stmt)
-        job = res.scalar_one_or_none()
-        if job:
-            job.status = "completed"
-            job.progress = 1.0
-            job.result_json = result_payload
-            job.agent_metadata = agent_metadata
-            job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
-            await db.commit()
+        async with async_session() as db:
+            stmt = select(Job).where(Job.id == job_id)
+            res = await db.execute(stmt)
+            job = res.scalar_one_or_none()
+            if job:
+                job.status = "completed"
+                job.progress = 1.0
+                job.result_json = result_payload
+                job.agent_metadata = agent_metadata
+                job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                await db.commit()
 
         logger.info(f"Job {job_id} completed successfully in {total_latency}ms")
         await emit({"status": "finished", "result": result_payload})
         
     except Exception as e:
         logger.error(f"Job {job_id} failed: {str(e)}", exc_info=True)
-        stmt = select(Job).where(Job.id == job_id)
-        res = await db.execute(stmt)
-        job = res.scalar_one_or_none()
-        if job:
-            job.status = "failed"
-            job.error_message = str(e)
-            job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
-            await db.commit()
+        async with async_session() as db:
+            stmt = select(Job).where(Job.id == job_id)
+            res = await db.execute(stmt)
+            job = res.scalar_one_or_none()
+            if job:
+                job.status = "failed"
+                job.error_message = str(e)
+                job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                await db.commit()
             
-        await emit({"status": "error", "message": "An internal error occurred during processing."})
+        await emit({"status": "error", "message": f"Processing failed: {str(e)}"})
 
     finally:
         await asyncio.sleep(2)
@@ -196,7 +199,7 @@ async def analyze_image_job(
     await db.commit()
     
     job_queues[job_id] = asyncio.Queue()
-    background_tasks.add_task(process_analysis_job, job_id, content, db, storage_id)
+    background_tasks.add_task(process_analysis_job, job_id, content, storage_id)
     
     return JobCreateResponse(job_id=job_id)
 

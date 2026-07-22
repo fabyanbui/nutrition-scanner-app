@@ -34,7 +34,7 @@ class ModelMock:
         elif "ingredients" in prompt.lower():
             return '{"ingredients": [{"name": "Mock Ingredient", "confidence": 0.85, "portion_size": "1 cup"}]}'
         elif "nutrition" in prompt.lower():
-            return '{"calories": {"value": 500, "confidence": 0.8}, "protein": {"value": 20, "confidence": 0.75}, "carbohydrates": {"value": 50, "confidence": 0.8}, "fat": {"value": 15, "confidence": 0.7}, "fiber": {"value": 5, "confidence": 0.6}, "sugar": {"value": 10, "confidence": 0.8}, "sodium": {"value": 800, "confidence": 0.85}}'
+            return '{"calories": {"value": 500, "confidence": 0.8}, "protein": {"value": 20, "confidence": 0.75}, "carbs": {"value": 50, "confidence": 0.8}, "fat": {"value": 15, "confidence": 0.7}, "fiber": {"value": 5, "confidence": 0.6}, "sugar": {"value": 10, "confidence": 0.8}, "sodium": {"value": 800, "confidence": 0.85}}'
         elif "quality" in prompt.lower():
             return '{"is_valid_food_image": true, "confidence_adjustment_factor": 1.0, "warnings": []}'
         return "{}"
