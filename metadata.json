@@ -1,0 +1,8 @@
+{
+  "name": "Nutrition Scanner",
+  "description": "AI-powered web application that analyzes food images and estimates nutritional information.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
