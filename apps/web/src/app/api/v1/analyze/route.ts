@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLocalJob } from "../jobsStore";
 
-const FASTAPI_URL = process.env.API_URL || "http://127.0.0.1:8000";
+const FASTAPI_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 async function isBackendAvailable(): Promise<boolean> {
   try {
@@ -31,17 +31,23 @@ export async function POST(req: NextRequest) {
     const backendUp = await isBackendAvailable();
 
     if (backendUp) {
-      // Forward request to FastAPI backend
-      const proxyFormData = new FormData();
-      proxyFormData.append("file", file);
+      try {
+        // Forward request to FastAPI backend
+        const proxyFormData = new FormData();
+        proxyFormData.append("file", file);
 
-      const backendRes = await fetch(`${FASTAPI_URL}/api/v1/analyze`, {
-        method: "POST",
-        body: proxyFormData,
-      });
+        const backendRes = await fetch(`${FASTAPI_URL}/api/v1/analyze`, {
+          method: "POST",
+          body: proxyFormData,
+        });
 
-      const data = await backendRes.json();
-      return NextResponse.json(data, { status: backendRes.status });
+        if (backendRes.ok) {
+          const data = await backendRes.json();
+          return NextResponse.json(data, { status: backendRes.status });
+        }
+      } catch (err) {
+        console.warn(`Backend proxy to ${FASTAPI_URL} failed, using local simulation:`, err);
+      }
     }
 
     // Local fallback when FastAPI backend is not running
