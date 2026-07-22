@@ -7,6 +7,7 @@ import uuid
 import asyncio
 import json
 from sse_starlette.sse import EventSourceResponse
+from .evaluation_api import router as eval_router
 from .image_quality import analyze_image_quality
 
 # We will handle missing path in docker container via proper pythonpath or setup.py
@@ -29,6 +30,8 @@ async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+
+app.include_router(eval_router)
 
 app.add_middleware(
     CORSMiddleware,
