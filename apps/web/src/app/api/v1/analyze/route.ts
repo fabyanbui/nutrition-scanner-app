@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLocalJob } from "../jobsStore";
-
-const FASTAPI_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-async function isBackendAvailable(): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 800);
-    const res = await fetch(`${FASTAPI_URL}/health`, { signal: controller.signal });
-    clearTimeout(id);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+import { getFastApiUrl } from "../getFastApiUrl";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,15 +15,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: "File must be an image" }, { status: 400 });
     }
 
-    const backendUp = await isBackendAvailable();
+    const apiUrl = await getFastApiUrl();
 
-    if (backendUp) {
+    if (apiUrl) {
       try {
         // Forward request to FastAPI backend
         const proxyFormData = new FormData();
         proxyFormData.append("file", file);
 
-        const backendRes = await fetch(`${FASTAPI_URL}/api/v1/analyze`, {
+        const backendRes = await fetch(`${apiUrl}/api/v1/analyze`, {
           method: "POST",
           body: proxyFormData,
         });
@@ -46,7 +33,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(data, { status: backendRes.status });
         }
       } catch (err) {
-        console.warn(`Backend proxy to ${FASTAPI_URL} failed, using local simulation:`, err);
+        console.warn(`Backend proxy to ${apiUrl} failed, using local simulation:`, err);
       }
     }
 

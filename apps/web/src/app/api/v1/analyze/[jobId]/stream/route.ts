@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getLocalJob } from "../../../jobsStore";
-
-const FASTAPI_URL = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+import { getFastApiUrl } from "../../../getFastApiUrl";
 
 export async function GET(
   req: NextRequest,
@@ -13,19 +12,21 @@ export async function GET(
   if (!localJob) {
     // Attempt proxying to FastAPI if job wasn't local
     try {
-      const proxyRes = await fetch(`${FASTAPI_URL}/api/v1/analyze/${jobId}/stream`);
-      if (!proxyRes.ok) {
-        return NextResponse.json({ detail: "Job not found" }, { status: 404 });
+      const apiUrl = await getFastApiUrl();
+      if (apiUrl) {
+        const proxyRes = await fetch(`${apiUrl}/api/v1/analyze/${jobId}/stream`);
+        if (proxyRes.ok && proxyRes.body) {
+          return new Response(proxyRes.body, {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              Connection: "keep-alive",
+            },
+          });
+        }
       }
-      return new Response(proxyRes.body, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-        },
-      });
-    } catch {
-      return NextResponse.json({ detail: "Job not found or stream expired" }, { status: 404 });
+    } catch (err) {
+      console.warn("Stream proxy to FastAPI failed:", err);
     }
   }
 
@@ -47,7 +48,8 @@ export async function GET(
       // Stage 1: Quality Check Heuristic
       await sleep(300);
       const warnings: string[] = [];
-      if (localJob.sizeBytes < 20000) {
+      const sizeBytes = localJob?.sizeBytes ?? 50000;
+      if (sizeBytes < 20000) {
         warnings.push("Image file size is small, resolution might affect accuracy.");
       }
       sendEvent({

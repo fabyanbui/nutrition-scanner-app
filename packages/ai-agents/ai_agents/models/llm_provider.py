@@ -35,6 +35,23 @@ class InferenceServiceClient(BaseVisionModel):
             return text[start:end].strip()
         return text
 
+    def _parse_schema(self, content: str, schema: Type[T]) -> Any:
+        try:
+            json_str = self._extract_json(content)
+            parsed = json.loads(json_str)
+            if isinstance(parsed, dict):
+                if "foods" in parsed and "items" not in parsed:
+                    parsed["items"] = parsed.pop("foods")
+                if "ingredients" in parsed and isinstance(parsed["ingredients"], list):
+                    for ing in parsed["ingredients"]:
+                        if isinstance(ing, dict) and "portion_size" in ing and "estimated_amount" not in ing:
+                            ing["estimated_amount"] = ing.pop("portion_size")
+                if "is_valid_food_image" in parsed and "valid" not in parsed:
+                    parsed["valid"] = parsed.pop("is_valid_food_image")
+            return schema(**parsed)
+        except Exception as e:
+            raise ValueError(f"Failed to parse structured output from model: {e}\nRaw output: {content}")
+
     async def analyze_image(self, image_bytes: bytes, prompt: str, schema: Type[T] = None) -> Any:
         if schema:
             prompt += f"\n\nYou must return the result strictly as a JSON object matching this schema:\n{schema.model_json_schema()}"
@@ -58,12 +75,7 @@ class InferenceServiceClient(BaseVisionModel):
                 self.model_name = data.get("metadata", {}).get("model", "unknown")
                 
                 if schema:
-                    try:
-                        json_str = self._extract_json(content)
-                        parsed = json.loads(json_str)
-                        return schema(**parsed)
-                    except Exception as e:
-                        raise ValueError(f"Failed to parse structured output from model: {e}\nRaw output: {content}")
+                    return self._parse_schema(content, schema)
                 return content
             except httpx.RequestError as e:
                 raise ConnectionError(f"Failed to connect to Inference Service at {self.base_url}: {e}")
@@ -88,12 +100,7 @@ class InferenceServiceClient(BaseVisionModel):
                 self.model_name = data.get("metadata", {}).get("model", "unknown")
                 
                 if schema:
-                    try:
-                        json_str = self._extract_json(content)
-                        parsed = json.loads(json_str)
-                        return schema(**parsed)
-                    except Exception as e:
-                        raise ValueError(f"Failed to parse structured output from model: {e}\nRaw output: {content}")
+                    return self._parse_schema(content, schema)
                 return content
             except httpx.RequestError as e:
                 raise ConnectionError(f"Failed to connect to Inference Service at {self.base_url}: {e}")

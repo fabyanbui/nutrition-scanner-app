@@ -20,6 +20,8 @@ class InferenceResponse(BaseModel):
     text: str
     metadata: Dict[str, Any]
 
+import json
+
 # Placeholder for real model loading
 class ModelMock:
     def __init__(self):
@@ -28,15 +30,40 @@ class ModelMock:
 
     def generate(self, prompt: str, image_base64: Optional[str], temperature: float) -> str:
         # Simulate inference time
-        time.sleep(1)
-        if "foods" in prompt.lower():
-            return '{"foods": [{"name": "Mock Food", "confidence": 0.9}]}'
-        elif "ingredients" in prompt.lower():
-            return '{"ingredients": [{"name": "Mock Ingredient", "confidence": 0.85, "portion_size": "1 cup"}]}'
-        elif "nutrition" in prompt.lower():
-            return '{"calories": {"value": 500, "confidence": 0.8}, "protein": {"value": 20, "confidence": 0.75}, "carbs": {"value": 50, "confidence": 0.8}, "fat": {"value": 15, "confidence": 0.7}, "fiber": {"value": 5, "confidence": 0.6}, "sugar": {"value": 10, "confidence": 0.8}, "sodium": {"value": 800, "confidence": 0.85}}'
-        elif "quality" in prompt.lower():
-            return '{"is_valid_food_image": true, "confidence_adjustment_factor": 1.0, "warnings": []}'
+        time.sleep(0.5)
+        prompt_lower = prompt.lower()
+        if "items" in prompt_lower or "food" in prompt_lower or "identify" in prompt_lower or "recognize" in prompt_lower:
+            return json.dumps({
+                "items": [
+                    {"name": "Grilled Chicken & Quinoa Bowl", "confidence": 0.92},
+                    {"name": "Avocado Salad", "confidence": 0.86}
+                ]
+            })
+        elif "ingredient" in prompt_lower:
+            return json.dumps({
+                "ingredients": [
+                    {"name": "Chicken Breast", "estimated_amount": "150g", "confidence": 0.91},
+                    {"name": "Cooked Quinoa", "estimated_amount": "1 cup (185g)", "confidence": 0.88},
+                    {"name": "Sliced Avocado", "estimated_amount": "1/2 medium", "confidence": 0.85},
+                    {"name": "Cherry Tomatoes", "estimated_amount": "50g", "confidence": 0.82}
+                ]
+            })
+        elif "nutrition" in prompt_lower or "calories" in prompt_lower or "macro" in prompt_lower:
+            return json.dumps({
+                "calories": {"value": 540.0, "confidence": 0.88},
+                "protein": {"value": 42.0, "confidence": 0.90},
+                "carbs": {"value": 45.0, "confidence": 0.85},
+                "fat": {"value": 18.0, "confidence": 0.82},
+                "fiber": {"value": 8.0, "confidence": 0.80},
+                "sugar": {"value": 4.0, "confidence": 0.84},
+                "sodium": {"value": 620.0, "confidence": 0.81}
+            })
+        elif "quality" in prompt_lower or "valid" in prompt_lower:
+            return json.dumps({
+                "valid": True,
+                "warnings": [],
+                "adjusted_confidence": {"overall": 0.86}
+            })
         return "{}"
 
 model = None
