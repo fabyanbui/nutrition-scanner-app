@@ -4,6 +4,12 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import time
 
+try:
+    from ai_agents.graph.workflow import NutritionScannerWorkflow
+    from ai_agents.models.llm_provider import LlavaModel
+except ImportError:
+    pass  # We will handle missing path in docker container via proper pythonpath or setup.py
+
 app = FastAPI(title="Nutrition Scanner API", version="1.0.0")
 
 app.add_middleware(
@@ -41,28 +47,51 @@ async def analyze_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File must be an image")
     
     start_time = time.time()
-    
-    # Read file content just to simulate processing
     content = await file.read()
     
-    # Simulate processing delay
-    time.sleep(1.5)
+    try:
+        model = LlavaModel()
+        workflow = NutritionScannerWorkflow(model)
+        state = await workflow.run(image_bytes=content)
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=f"AI Model service unavailable: {str(e)}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"AI Pipeline failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        
+    quality_warning = None
+    if state.get("quality") and not state["quality"].valid:
+        quality_warning = " | ".join(state["quality"].warnings)
+        
+    foods_res = [
+        FoodItem(name=f.name, confidence=f.confidence) for f in state.get("foods", [])
+    ]
     
-    # Mock AI pipeline output
-    # This will be replaced by the actual LangGraph implementation
+    nutrition_res = state.get("nutrition")
+    if nutrition_res:
+        nutrition = NutritionEstimate(
+            calories=ConfidenceValue(value=nutrition_res.calories.value, confidence=nutrition_res.calories.confidence),
+            protein=ConfidenceValue(value=nutrition_res.protein.value, confidence=nutrition_res.protein.confidence),
+            carbs=ConfidenceValue(value=nutrition_res.carbs.value, confidence=nutrition_res.carbs.confidence),
+            fat=ConfidenceValue(value=nutrition_res.fat.value, confidence=nutrition_res.fat.confidence)
+        )
+    else:
+        # Fallback if nutrition fails
+        nutrition = NutritionEstimate(
+            calories=ConfidenceValue(value=0, confidence=0),
+            protein=ConfidenceValue(value=0, confidence=0),
+            carbs=ConfidenceValue(value=0, confidence=0),
+            fat=ConfidenceValue(value=0, confidence=0)
+        )
+        
+    processing_time_ms = int((time.time() - start_time) * 1000)
+    
     response = AnalysisResponse(
-        foods=[
-            FoodItem(name="Pho", confidence=0.85),
-            FoodItem(name="Egg", confidence=0.92)
-        ],
-        nutrition=NutritionEstimate(
-            calories=ConfidenceValue(value=450.0, confidence=0.75),
-            protein=ConfidenceValue(value=25.0, confidence=0.80),
-            carbs=ConfidenceValue(value=60.0, confidence=0.70),
-            fat=ConfidenceValue(value=12.0, confidence=0.85)
-        ),
-        quality_warning="Image is slightly blurry, confidence scores may be affected.",
-        processing_time_ms=int((time.time() - start_time) * 1000)
+        foods=foods_res,
+        nutrition=nutrition,
+        quality_warning=quality_warning,
+        processing_time_ms=processing_time_ms
     )
     
     return response
