@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -e /packages/ai-agents
 
 COPY apps/api/src src/
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/packages/ai-agents
 
 EXPOSE 8000
 

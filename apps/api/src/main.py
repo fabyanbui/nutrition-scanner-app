@@ -1,3 +1,4 @@
+import datetime
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,6 +7,8 @@ import time
 import uuid
 import asyncio
 import json
+import sys
+import os
 from sse_starlette.sse import EventSourceResponse
 
 from .config import settings
@@ -15,14 +18,20 @@ from .cache import get_cache
 from .evaluation_api import router as eval_router
 from .image_quality import analyze_image_quality
 
+# Ensure packages directory is in sys.path if running in docker/monorepo
+packages_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../packages/ai-agents"))
+if packages_path not in sys.path and os.path.exists(packages_path):
+    sys.path.insert(0, packages_path)
+
 NutritionScannerWorkflow = None
 InferenceServiceClient = None
 
 try:
     from ai_agents.graph.workflow import NutritionScannerWorkflow
     from ai_agents.models.llm_provider import InferenceServiceClient
-except ImportError as e:
-    logger.warning(f"Failed to import ai_agents: {e}")
+    logger.info("Successfully loaded ai_agents library")
+except Exception as e:
+    logger.warning(f"Failed to import ai_agents: {e}", exc_info=True)
 
 from .db.database import get_db, engine, async_session
 from .db.models import Job, Base
@@ -142,7 +151,7 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, storage_id: str)
                 job.progress = 1.0
                 job.result_json = result_payload
                 job.agent_metadata = agent_metadata
-                job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                job.completed_at = datetime.datetime.utcnow()
                 await db.commit()
 
         logger.info(f"Job {job_id} completed successfully in {total_latency}ms")
@@ -157,7 +166,7 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, storage_id: str)
             if job:
                 job.status = "failed"
                 job.error_message = str(e)
-                job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
+                job.completed_at = datetime.datetime.utcnow()
                 await db.commit()
             
         await emit({"status": "error", "message": f"Processing failed: {str(e)}"})
