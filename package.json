@@ -7,7 +7,10 @@
     "packages/config"
   ],
   "scripts": {
+    "dev": "npm run dev:web",
     "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "cd apps/api && uvicorn src.main:app --reload --port 8000",
+    "dev:inference": "cd apps/inference && uvicorn src.main:app --reload --port 8001",
     "build:web": "npm run build --workspace=apps/web",
     "start:web": "npm run start --workspace=apps/web",
     "lint": "npm run lint --workspace=apps/web",

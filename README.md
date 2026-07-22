@@ -73,35 +73,47 @@ All sensitive local environment configuration files (`.env`, `.env.local`) are i
 
 ---
 
-#### Option B: Running Standalone Services Locally
+#### Option B: Local NPM & Hybrid Debugging (Without Docker)
 
-1. **Frontend Setup (`apps/web`)**:
-   ```bash
-   cd apps/web
-   cp .env.example .env.local
-   npm install
-   npm run dev
-   ```
+You can run and debug the frontend directly using **NPM commands** at the root of the workspace.
 
-2. **Backend Setup (`apps/api`)**:
-   ```bash
-   cd apps/api
-   cp .env.example .env
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   uvicorn src.main:app --reload --port 8000
-   ```
+##### 1. Quick Local Web Debugging (With Next.js Local Gateway Fallback)
+`apps/web` includes an in-memory local route handler gateway (`/app/api/v1/analyze/`). When the Python FastAPI backend is not running, the web app automatically falls back to simulating the real-time SSE multi-agent pipeline locally.
+```bash
+# Install root workspace dependencies
+npm install
 
-3. **Inference Service Setup (`apps/inference`)**:
-   ```bash
-   cd apps/inference
-   cp .env.example .env
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   uvicorn src.main:app --reload --port 8001
-   ```
+# Start Next.js development server on http://localhost:3000
+npm run dev
+```
+
+##### 2. Debugging Next.js Web App with Workspace Workspaces
+```bash
+# Run web dev server
+npm run dev:web
+
+# Run linter across Next.js app
+npm run lint
+
+# Test production build locally
+npm run build:web
+npm run start:web
+```
+
+##### 3. Debugging FastAPI Backend & Inference Engine locally with NPM helper scripts
+To debug the full end-to-end Python services alongside Next.js:
+
+```bash
+# Terminal 1: Run Next.js Frontend (Port 3000)
+npm run dev:web
+
+# Terminal 2: Run FastAPI Orchestrator (Port 8000)
+# (Ensure your Python virtual environment is active and requirements installed)
+npm run dev:api
+
+# Terminal 3: Run Inference Service (Port 8001)
+npm run dev:inference
+```
 
 ---
 
