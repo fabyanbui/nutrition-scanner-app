@@ -41,6 +41,70 @@ docker compose up --build
 docker compose down
 ```
 
+## ⚙️ Environment Configuration & Local Setup
+
+All sensitive local environment configuration files (`.env`, `.env.local`) are ignored by Git (listed in `.gitignore`) to prevent credential leakage. Example template files (`.env.example`) have been created across all project locations.
+
+### 📋 Environment Files Overview
+
+| Environment File | Purpose | Location |
+| :--- | :--- | :--- |
+| `.env` (Root) | Global Compose variables for Docker stack | `/.env.example` |
+| `apps/web/.env` | Next.js Frontend server/client settings | `/apps/web/.env.example` |
+| `apps/api/.env` | FastAPI Backend & LangGraph settings | `/apps/api/.env.example` |
+| `apps/inference/.env` | VLM Open-Source Inference settings | `/apps/inference/.env.example` |
+
+---
+
+### 🛠️ Step-by-Step Setup Guide
+
+#### Option A: Running via Docker Compose (Recommended)
+
+1. **Copy the Root Environment Template**:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Launch Docker Stack**:
+   ```bash
+   docker compose up --build
+   ```
+   *The root `.env` file configures service-to-service hostnames (`http://api:8000`, `http://inference:8001`) automatically.*
+
+---
+
+#### Option B: Running Standalone Services Locally
+
+1. **Frontend Setup (`apps/web`)**:
+   ```bash
+   cd apps/web
+   cp .env.example .env.local
+   npm install
+   npm run dev
+   ```
+
+2. **Backend Setup (`apps/api`)**:
+   ```bash
+   cd apps/api
+   cp .env.example .env
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   uvicorn src.main:app --reload --port 8000
+   ```
+
+3. **Inference Service Setup (`apps/inference`)**:
+   ```bash
+   cd apps/inference
+   cp .env.example .env
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   uvicorn src.main:app --reload --port 8001
+   ```
+
+---
+
 ## 📁 Repository Structure
 ```
 nutrition-scanner/
@@ -52,16 +116,22 @@ nutrition-scanner/
 │   ├── ai-agents/  # LangGraph Agent Workflows
 │   ├── shared/     # Shared Utilities & Config
 │   └── evaluation/ # Benchmarks & Metrics
-├── docs/           # Architecture and Deployment Guides
+├── docs/           # Technical Documentation
 │   ├── ARCHITECTURE.md
-│   └── DEPLOYMENT.md
+│   ├── CODEBASE_GUIDE.md
+│   ├── DATABASE_SCHEMA.md
+│   ├── DEPLOYMENT.md
+│   ├── DESIGN.md
+│   └── DOMAIN_REQUIREMENTS.md
 ├── docker-compose.yml
 └── docker-compose.prod.yml
 ```
 
-## 📚 Documentation
-- [Architecture Details](docs/ARCHITECTURE.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
+## 📚 Documentation Index
+- [System Architecture & Multi-Agent Diagrams](docs/ARCHITECTURE.md)
+- [Codebase Guide & Directory Walkthrough](docs/CODEBASE_GUIDE.md)
+- [Database Schemas & ER Diagrams](docs/DATABASE_SCHEMA.md)
+- [Deployment & Cloud Infrastructure Guide](docs/DEPLOYMENT.md)
+- [Frontend UI/UX & SSE Design Strategy](docs/DESIGN.md)
+- [Domain Requirements & Anti-Hallucination Guidelines](docs/DOMAIN_REQUIREMENTS.md)
 
-## Environment Configuration
-Configuration is heavily abstracted via `pydantic-settings`. Template `.env.example` files are provided in respective app directories. By default, local docker-compose provides environment variables to run locally smoothly.
