@@ -15,14 +15,16 @@ from .cache import get_cache
 from .evaluation_api import router as eval_router
 from .image_quality import analyze_image_quality
 
+NutritionScannerWorkflow = None
+InferenceServiceClient = None
+
 try:
     from ai_agents.graph.workflow import NutritionScannerWorkflow
-    # Assuming we patched it to use InferenceServiceClient
     from ai_agents.models.llm_provider import InferenceServiceClient
 except ImportError as e:
     logger.warning(f"Failed to import ai_agents: {e}")
 
-from .db.database import get_db, engine
+from .db.database import get_db, engine, async_session
 from .db.models import Job, Base
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -61,6 +63,9 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, storage_id: str)
             await queue.put(data)
             
     try:
+        if InferenceServiceClient is None or NutritionScannerWorkflow is None:
+            raise RuntimeError("ai_agents library is not loaded. Please verify installation.")
+
         model = InferenceServiceClient(base_url=settings.INFERENCE_SERVICE_URL)
         workflow = NutritionScannerWorkflow(model)
         

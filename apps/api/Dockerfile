@@ -9,11 +9,12 @@ COPY apps/api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy API and mock agent package
-COPY apps/api/src src/
 COPY packages/ai-agents /packages/ai-agents/
+RUN pip install --no-cache-dir -e /packages/ai-agents
 
-# Ensure packages can be imported
-ENV PYTHONPATH=/packages
+COPY apps/api/src src/
+
+ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
