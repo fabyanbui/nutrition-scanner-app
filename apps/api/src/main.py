@@ -19,9 +19,14 @@ from .evaluation_api import router as eval_router
 from .image_quality import analyze_image_quality
 
 # Ensure packages directory is in sys.path if running in docker/monorepo
-packages_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../packages/ai-agents"))
-if packages_path not in sys.path and os.path.exists(packages_path):
-    sys.path.insert(0, packages_path)
+candidate_paths = [
+    "/packages/ai-agents",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../packages/ai-agents")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../packages/ai-agents")),
+]
+for p in candidate_paths:
+    if p not in sys.path and os.path.exists(p):
+        sys.path.insert(0, p)
 
 NutritionScannerWorkflow = None
 InferenceServiceClient = None
