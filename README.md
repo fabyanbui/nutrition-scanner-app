@@ -117,6 +117,52 @@ npm run dev:inference
 
 ---
 
+#### Option C: Split & Modular Docker Debugging (Service-by-Service)
+
+If you want to isolate individual services, view dedicated stdout logs, or debug containers independently while maintaining Docker environment parity:
+
+##### 1. Start Shared Database Infrastructure First
+Run the PostgreSQL container in detached mode so it remains available in the background:
+```bash
+docker compose up -d db
+```
+
+##### 2. Run and Debug Specific Services in Separate Terminals
+Launch individual containers in the foreground to monitor live output and isolate execution bugs:
+
+```bash
+# Terminal 1: Run and debug FastAPI API Gateway (Port 8000)
+docker compose up api
+
+# Terminal 2: Run and debug VLM Inference Engine (Port 8001)
+docker compose up inference
+
+# Terminal 3: Run and debug Next.js Frontend (Port 3000)
+docker compose up web
+```
+
+##### 3. Selective Rebuilding & Hot Restarting
+When updating code in a specific service, rebuild and restart only that target container without shutting down the rest of your Docker stack:
+```bash
+# Rebuild and restart only the API container
+docker compose up --build api
+```
+
+##### 4. Interactive Container Debugging Shell
+To inspect filesystem artifacts, inspect environment variables, or execute CLI tools directly inside a running service container:
+```bash
+# Open an interactive bash session inside the API service container
+docker compose run --rm --service-ports api /bin/bash
+```
+
+##### 5. Essential Single-Service Docker Commands
+- **Stream logs for a specific service**: `docker compose logs -f api`
+- **Restart a single container**: `docker compose restart web`
+- **Stop a specific service**: `docker compose stop inference`
+```
+
+---
+
 ## 📁 Repository Structure
 ```
 nutrition-scanner/
