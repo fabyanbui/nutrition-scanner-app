@@ -113,8 +113,10 @@ export default function Home() {
     };
 
     eventSource.onerror = (err) => {
-      console.error("EventSource failed:", err);
-      setError("Stream connection lost");
+      if (eventSource.readyState === EventSource.CLOSED) {
+        return;
+      }
+      console.warn("EventSource disconnected or completed stream");
       eventSource.close();
     };
 
