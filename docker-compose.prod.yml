@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=https://api.nutrition-scanner.com
+    restart: always
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - INFERENCE_SERVICE_URL=http://inference:8001
+      - STORAGE_PROVIDER=supabase
+      - ENV=production
+      - LOG_LEVEL=INFO
+    restart: always
+    depends_on:
+      inference:
+        condition: service_started
+
+  inference:
+    build:
+      context: ./apps/inference
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - ENV=production
+    restart: always
+
+# Note: DB is usually managed in production (e.g. AWS RDS, Supabase, Cloud SQL)
+# Object Storage is managed (S3, Cloud Storage, Supabase Storage)

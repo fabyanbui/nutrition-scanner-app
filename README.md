@@ -1,33 +1,67 @@
 # Nutrition Scanner
 
-An AI-powered web application that analyzes food images to estimate nutritional information. This project is built as a production-oriented MVP showcasing a multi-agent AI pipeline using LangGraph, streamed to the client using Server-Sent Events (SSE).
+An AI-powered web application that analyzes food images to estimate nutritional information. This project is built as a production-oriented MVP showcasing a multi-agent AI pipeline using LangGraph.
 
-## Phase 3: Productization & Streaming
+## Phase 4: Cloud-Native Architecture
 
-This phase transforms the synchronous proof-of-concept into a robust streaming architecture. It improves user experience, system observability, and handles long-running AI pipelines gracefully.
+This phase transforms the MVP into a production-inspired, cost-aware, and cloud-native AI application.
 
-### Streaming Architecture & SSE Explanation
-The application uses **Server-Sent Events (SSE)** for unidirectional real-time communication from the server to the client. When an image is uploaded, the frontend opens an `EventSource` connection to the `/api/v1/analyze/{job_id}/stream` endpoint.
-SSE was chosen over WebSockets because the data flow is strictly unidirectional (server -> client progress updates), making SSE a lighter, more appropriate, and easier-to-scale choice.
+### Key Architectural Improvements:
+- **Separation of Services**: The system is split into three independent services:
+  - **Frontend (Next.js)**: Scalable presentation layer.
+  - **API Gateway (FastAPI)**: Orchestrates the LangGraph agents, handles database operations, caching, and storage.
+  - **Inference Service (FastAPI)**: A dedicated, isolated service running the open-source VLM. The backend interacts with it via HTTP, allowing easy migration of inference tasks to serverless GPU clouds (e.g., RunPod, Modal) without altering core logic.
+- **Containerization**: Fully containerized environment via `docker-compose`. Separate `docker-compose.dev.yml` and `docker-compose.prod.yml` configurations for deployment.
+- **Robustness**: 
+  - Centralized **JSON logging** and basic **metrics** endpoints.
+  - Health checks (`/health`, `/ready`, `/status`) integrated into all services.
+  - Expanded **PostgreSQL Database Schema** designed to track job pipelines, agent execution latency, model versioning, and future multi-tenant users without schema redesign.
+  - Abstracted **Storage** (Local/Supabase) and **Caching** providers.
+- **CI/CD Pipeline**: GitHub Actions configured to lint, test, and build Docker containers.
 
-### Job Lifecycle
-To prevent HTTP timeouts and allow asynchronous processing:
-1. **Job Created**: Image is uploaded to `POST /api/v1/analyze`. The server performs basic heuristics, writes a new `Job` record to PostgreSQL, and returns a `job_id` immediately.
-2. **Queue**: The job enters the processing queue (managed by FastAPI `BackgroundTasks` in this MVP).
-3. **Running**: The LangGraph agent pipeline executes. As each node starts and finishes, it pushes events into an asynchronous queue mapped to the `job_id`.
-4. **Completed / Failed**: The final state (or error) is recorded in PostgreSQL.
+## 🚀 Quick Start (Local Development)
 
-### Agent Execution Flow
-The AI pipeline utilizes LangGraph to coordinate multiple specialized agents:
-1. **Food Recognition Agent**: Detects food items in the image.
-2. **Ingredient Analysis Agent**: Extracts and lists possible ingredients.
-3. **Nutrition Estimation Agent**: Estimates macronutrients and calories.
-4. **Quality Control Agent**: Validates consistency across agents and flags issues (e.g., unrealistic calorie counts).
-5. **Response Formatting Agent**: Structures the final output.
+You can run the entire stack locally in under 10 minutes using Docker Compose.
 
-### Frontend State Management
-The Next.js frontend maintains a structured state for the `Agent Timeline` and `Partial Results`.
-As SSE events arrive, they update a `stages` array (tracking `pending`, `running`, `completed` states for each agent) and a `partialData` object that incrementally populates the "Analysis Results" UI with confidence badges.
+### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed and running.
 
-### Observability Strategy
-Every agent execution logs its latency. The timeline events emitted over SSE contain `latency_ms` properties, which are then rendered on the client timeline. The overall pipeline latency, errors, and success rates are recorded in the PostgreSQL `jobs` table to feed into future dashboard analytics.
+### 1. Start the project
+```bash
+docker compose up --build
+```
+
+### 2. Access the application
+- **Frontend App**: [http://localhost:3000](http://localhost:3000)
+- **API Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Inference Service**: [http://localhost:8001/health](http://localhost:8001/health)
+
+### 3. Stop the project
+```bash
+docker compose down
+```
+
+## 📁 Repository Structure
+```
+nutrition-scanner/
+├── apps/
+│   ├── web/        # Next.js Frontend
+│   ├── api/        # FastAPI Backend (Agent Orchestrator)
+│   └── inference/  # FastAPI Inference Service (VLM Runner)
+├── packages/
+│   ├── ai-agents/  # LangGraph Agent Workflows
+│   ├── shared/     # Shared Utilities & Config
+│   └── evaluation/ # Benchmarks & Metrics
+├── docs/           # Architecture and Deployment Guides
+│   ├── ARCHITECTURE.md
+│   └── DEPLOYMENT.md
+├── docker-compose.yml
+└── docker-compose.prod.yml
+```
+
+## 📚 Documentation
+- [Architecture Details](docs/ARCHITECTURE.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+
+## Environment Configuration
+Configuration is heavily abstracted via `pydantic-settings`. Template `.env.example` files are provided in respective app directories. By default, local docker-compose provides environment variables to run locally smoothly.

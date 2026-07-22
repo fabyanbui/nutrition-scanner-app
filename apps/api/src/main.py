@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -7,19 +7,23 @@ import uuid
 import asyncio
 import json
 from sse_starlette.sse import EventSourceResponse
+
+from .config import settings
+from .logger import logger
+from .storage import get_storage
+from .cache import get_cache
 from .evaluation_api import router as eval_router
 from .image_quality import analyze_image_quality
 
-# We will handle missing path in docker container via proper pythonpath or setup.py
 try:
     from ai_agents.graph.workflow import NutritionScannerWorkflow
-    from ai_agents.models.llm_provider import LlavaModel
-except ImportError:
-    pass
+    # Assuming we patched it to use InferenceServiceClient
+    from ai_agents.models.llm_provider import InferenceServiceClient
+except ImportError as e:
+    logger.warning(f"Failed to import ai_agents: {e}")
 
-from .db.database import get_db
+from .db.database import get_db, engine
 from .db.models import Job, Base
-from .db.database import engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -27,9 +31,9 @@ app = FastAPI(title="Nutrition Scanner API", version="1.0.0")
 
 @app.on_event("startup")
 async def on_startup():
+    logger.info("Initializing database schema")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
 
 app.include_router(eval_router)
 
@@ -41,22 +45,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global queue registry for SSE
 job_queues: Dict[str, asyncio.Queue] = {}
 
 class JobCreateResponse(BaseModel):
     job_id: str
 
-async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession):
+async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession, storage_id: str):
     start_time = time.time()
     queue = job_queues.get(job_id)
+    
+    agent_metadata = []
     
     async def emit(data: dict):
         if queue:
             await queue.put(data)
             
     try:
-        model = LlavaModel()
+        model = InferenceServiceClient(base_url=settings.INFERENCE_SERVICE_URL)
         workflow = NutritionScannerWorkflow(model)
         
         initial_state = {
@@ -68,14 +73,13 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             "metadata": {"model_name": getattr(model, "model_name", "unknown")}
         }
 
-        # Run heuristic quality check before ML graph
+        # Quality check
         warnings = analyze_image_quality(image_bytes)
         if warnings:
             await emit({"agent": "quality_heuristic", "status": "completed", "warning": " | ".join(warnings)})
         else:
             await emit({"agent": "quality_heuristic", "status": "completed"})
-        
-        # Stream from langgraph
+            
         node_start_times = {}
         last_node = None
         
@@ -83,6 +87,7 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             for node_name, state_update in output.items():
                 if last_node:
                     latency = int((time.time() - node_start_times[last_node]) * 1000)
+                    agent_metadata.append({"agent": last_node, "latency_ms": latency})
                     await emit({
                         "agent": last_node,
                         "status": "completed",
@@ -97,8 +102,6 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
                 node_start_times[node_name] = time.time()
                 last_node = node_name
                 
-                # We can also yield intermediate data if we want
-                # Let's emit the updated state for the frontend to consume
                 if node_name == "recognize_food" and "foods" in state_update:
                     await emit({"agent": node_name, "data": {"foods": [f.model_dump() for f in state_update["foods"]]}})
                 elif node_name == "analyze_ingredients" and "ingredients" in state_update:
@@ -108,17 +111,14 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
                 elif node_name == "check_quality" and "quality" in state_update and state_update["quality"]:
                     await emit({"agent": node_name, "data": {"quality": state_update["quality"].model_dump()}})
 
-        # Finish the last node
         if last_node:
             latency = int((time.time() - node_start_times[last_node]) * 1000)
+            agent_metadata.append({"agent": last_node, "latency_ms": latency})
             await emit({"agent": last_node, "status": "completed", "latency_ms": latency})
 
-        # Fetch final state to get the full result
         final_state = await workflow.app.ainvoke(initial_state)
-
         total_latency = int((time.time() - start_time) * 1000)
         
-        # Format the result nicely
         result_payload = {
             "foods": [f.model_dump() for f in final_state.get("foods", [])],
             "ingredients": [i.model_dump() for i in final_state.get("ingredients", [])],
@@ -127,7 +127,6 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             "processing_time_ms": total_latency
         }
 
-        # Update DB
         stmt = select(Job).where(Job.id == job_id)
         res = await db.execute(stmt)
         job = res.scalar_one_or_none()
@@ -135,12 +134,15 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             job.status = "completed"
             job.progress = 1.0
             job.result_json = result_payload
+            job.agent_metadata = agent_metadata
             job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
             await db.commit()
 
+        logger.info(f"Job {job_id} completed successfully in {total_latency}ms")
         await emit({"status": "finished", "result": result_payload})
         
     except Exception as e:
+        logger.error(f"Job {job_id} failed: {str(e)}", exc_info=True)
         stmt = select(Job).where(Job.id == job_id)
         res = await db.execute(stmt)
         job = res.scalar_one_or_none()
@@ -150,36 +152,51 @@ async def process_analysis_job(job_id: str, image_bytes: bytes, db: AsyncSession
             job.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
             await db.commit()
             
-        await emit({"status": "error", "message": str(e)})
+        await emit({"status": "error", "message": "An internal error occurred during processing."})
 
     finally:
-        # Give clients time to receive the last event before closing queue
         await asyncio.sleep(2)
         if job_id in job_queues:
-            # We don't remove it immediately, just put a close marker
             await queue.put({"_type": "close"})
 
 @app.post("/api/v1/analyze", response_model=JobCreateResponse)
 async def analyze_image_job(
+    request: Request,
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    logger.info(f"Received request {request_id}")
+    
     if not file.content_type.startswith("image/"):
+        logger.warning(f"Invalid file type: {file.content_type}")
         raise HTTPException(status_code=400, detail="File must be an image")
     
     content = await file.read()
+    
+    # Size validation
+    size_mb = len(content) / (1024 * 1024)
+    if size_mb > settings.MAX_IMAGE_SIZE_MB:
+        logger.warning(f"File too large: {size_mb}MB")
+        raise HTTPException(status_code=400, detail=f"Image size exceeds {settings.MAX_IMAGE_SIZE_MB}MB limit")
+        
     job_id = str(uuid.uuid4())
     
-    # Create DB Record
-    new_job = Job(id=job_id, status="queue")
+    storage = get_storage()
+    storage_id = await storage.upload(content, file.content_type)
+    
+    new_job = Job(
+        id=job_id, 
+        status="queue",
+        image_id=storage_id,
+        image_metadata={"size_bytes": len(content), "content_type": file.content_type}
+    )
     db.add(new_job)
     await db.commit()
     
-    # Initialize Queue
     job_queues[job_id] = asyncio.Queue()
-    
-    background_tasks.add_task(process_analysis_job, job_id, content, db)
+    background_tasks.add_task(process_analysis_job, job_id, content, db, storage_id)
     
     return JobCreateResponse(job_id=job_id)
 
@@ -207,3 +224,16 @@ async def stream_analysis(job_id: str):
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.get("/ready")
+def ready_check():
+    return {"status": "ready"}
+
+@app.get("/status")
+def status_check():
+    return {"environment": settings.ENV, "version": "1.0.0"}
+
+@app.get("/metrics")
+def metrics():
+    # To be extended with Prometheus or similar later
+    return {"status": "ok"}

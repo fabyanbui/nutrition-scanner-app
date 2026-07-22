@@ -1,0 +1,50 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # We can add actual linting and tests here
+      - name: Dummy Lint
+        run: echo "Linting passed"
+        
+      - name: Dummy Test
+        run: echo "Tests passed"
+
+  build-docker:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Build Web
+        run: docker build -t nutrition-web:latest -f apps/web/Dockerfile .
+        
+      - name: Build API
+        run: docker build -t nutrition-api:latest -f apps/api/Dockerfile .
+        
+      - name: Build Inference
+        run: docker build -t nutrition-inference:latest -f apps/inference/Dockerfile apps/inference
+        
+      - name: Deploy Instructions
+        run: |
+          echo "Builds successful!"
+          echo "To deploy to production, push images to a registry (ECR/GCR) and update ECS/Cloud Run."

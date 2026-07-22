@@ -17,13 +17,13 @@ class BaseVisionModel(ABC):
         pass
 
 
-class LlavaModel(BaseVisionModel):
-    def __init__(self, base_url: str = "http://localhost:11434"):
-        self.base_url = base_url
-        self.model_name = "llava:7b"
+class InferenceServiceClient(BaseVisionModel):
+    def __init__(self, base_url: str = None):
+        import os
+        self.base_url = base_url or os.getenv("INFERENCE_SERVICE_URL", "http://inference:8001")
+        self.model_name = "inference-service"
 
     def _extract_json(self, text: str) -> str:
-        # Simple heuristic to extract JSON from markdown output
         text = text.strip()
         if "```json" in text:
             start = text.find("```json") + 7
@@ -36,7 +36,6 @@ class LlavaModel(BaseVisionModel):
         return text
 
     async def analyze_image(self, image_bytes: bytes, prompt: str, schema: Type[T] = None) -> Any:
-        # Provide schema format in prompt if schema is given
         if schema:
             prompt += f"\n\nYou must return the result strictly as a JSON object matching this schema:\n{schema.model_json_schema()}"
         
@@ -45,23 +44,21 @@ class LlavaModel(BaseVisionModel):
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/api/generate",
+                    f"{self.base_url}/infer",
                     json={
-                        "model": self.model_name,
                         "prompt": prompt,
-                        "images": [image_b64],
-                        "stream": False,
-                        "format": "json" if schema else ""
+                        "image_base64": image_b64,
+                        "temperature": 0.2
                     },
                     timeout=60.0
                 )
                 response.raise_for_status()
                 data = response.json()
-                content = data.get("response", "")
+                content = data.get("text", "{}")
+                self.model_name = data.get("metadata", {}).get("model", "unknown")
                 
                 if schema:
                     try:
-                        # Extract and parse JSON
                         json_str = self._extract_json(content)
                         parsed = json.loads(json_str)
                         return schema(**parsed)
@@ -69,7 +66,7 @@ class LlavaModel(BaseVisionModel):
                         raise ValueError(f"Failed to parse structured output from model: {e}\nRaw output: {content}")
                 return content
             except httpx.RequestError as e:
-                raise ConnectionError(f"Failed to connect to LLM provider at {self.base_url}: {e}")
+                raise ConnectionError(f"Failed to connect to Inference Service at {self.base_url}: {e}")
 
     async def analyze_text(self, prompt: str, schema: Type[T] = None) -> Any:
         if schema:
@@ -78,18 +75,17 @@ class LlavaModel(BaseVisionModel):
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/api/generate",
+                    f"{self.base_url}/infer",
                     json={
-                        "model": self.model_name,
                         "prompt": prompt,
-                        "stream": False,
-                        "format": "json" if schema else ""
+                        "temperature": 0.2
                     },
                     timeout=60.0
                 )
                 response.raise_for_status()
                 data = response.json()
-                content = data.get("response", "")
+                content = data.get("text", "{}")
+                self.model_name = data.get("metadata", {}).get("model", "unknown")
                 
                 if schema:
                     try:
@@ -100,4 +96,4 @@ class LlavaModel(BaseVisionModel):
                         raise ValueError(f"Failed to parse structured output from model: {e}\nRaw output: {content}")
                 return content
             except httpx.RequestError as e:
-                raise ConnectionError(f"Failed to connect to LLM provider at {self.base_url}: {e}")
+                raise ConnectionError(f"Failed to connect to Inference Service at {self.base_url}: {e}")
