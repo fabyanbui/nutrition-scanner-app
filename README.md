@@ -1,104 +1,33 @@
 # Nutrition Scanner
 
-Nutrition Scanner is an AI-powered web application that analyzes food images and estimates nutritional information. This project is built using a modern modular monorepo structure, setting the foundation for robust AI integrations using LangGraph.
+An AI-powered web application that analyzes food images to estimate nutritional information. This project is built as a production-oriented MVP showcasing a multi-agent AI pipeline using LangGraph, streamed to the client using Server-Sent Events (SSE).
 
-## Architecture Overview
+## Phase 3: Productization & Streaming
 
-*   **Frontend**: Next.js with React and Tailwind CSS.
-*   **Backend API**: FastAPI (Python) for processing images and orchestrating AI agents.
-*   **AI Agent Pipeline**: A Python package using LangGraph with an open-source Vision Language Model.
-*   **Database**: PostgreSQL using SQLAlchemy (Asyncio) to store food analysis schemas (versioned outputs, processing times).
-*   **Infrastructure**: Fully containerized with Docker and Docker Compose.
+This phase transforms the synchronous proof-of-concept into a robust streaming architecture. It improves user experience, system observability, and handles long-running AI pipelines gracefully.
 
-## AI Architecture (Phase 2)
+### Streaming Architecture & SSE Explanation
+The application uses **Server-Sent Events (SSE)** for unidirectional real-time communication from the server to the client. When an image is uploaded, the frontend opens an `EventSource` connection to the `/api/v1/analyze/{job_id}/stream` endpoint.
+SSE was chosen over WebSockets because the data flow is strictly unidirectional (server -> client progress updates), making SSE a lighter, more appropriate, and easier-to-scale choice.
 
-The core analysis pipeline is managed by LangGraph to orchestrate multiple specialized agents:
+### Job Lifecycle
+To prevent HTTP timeouts and allow asynchronous processing:
+1. **Job Created**: Image is uploaded to `POST /api/v1/analyze`. The server performs basic heuristics, writes a new `Job` record to PostgreSQL, and returns a `job_id` immediately.
+2. **Queue**: The job enters the processing queue (managed by FastAPI `BackgroundTasks` in this MVP).
+3. **Running**: The LangGraph agent pipeline executes. As each node starts and finishes, it pushes events into an asynchronous queue mapped to the `job_id`.
+4. **Completed / Failed**: The final state (or error) is recorded in PostgreSQL.
 
-```text
-Image Input
-    |
-    v
-Food Recognition Agent
-    |
-    v
-Ingredient Analysis Agent
-    |
-    v
-Nutrition Estimation Agent
-    |
-    v
-Quality Control Agent
-    |
-    v
-Response Formatting Agent
-```
+### Agent Execution Flow
+The AI pipeline utilizes LangGraph to coordinate multiple specialized agents:
+1. **Food Recognition Agent**: Detects food items in the image.
+2. **Ingredient Analysis Agent**: Extracts and lists possible ingredients.
+3. **Nutrition Estimation Agent**: Estimates macronutrients and calories.
+4. **Quality Control Agent**: Validates consistency across agents and flags issues (e.g., unrealistic calorie counts).
+5. **Response Formatting Agent**: Structures the final output.
 
-### Agent Responsibilities
-- **Food Recognition Agent**: Detects food items/dishes in the image and provides confidence scores.
-- **Ingredient Analysis Agent**: Given the detected food, infers probable ingredients and estimates amounts.
-- **Nutrition Estimation Agent**: Takes ingredients and estimates macronutrients (calories, protein, carbs, fat, fiber, sugar, sodium).
-- **Quality Control Agent**: Validates macro consistencies (e.g., checks if protein/carbs/fat values align with total calories).
-- **Response Formatting Agent**: Finalizes structured JSON output for the frontend.
+### Frontend State Management
+The Next.js frontend maintains a structured state for the `Agent Timeline` and `Partial Results`.
+As SSE events arrive, they update a `stages` array (tracking `pending`, `running`, `completed` states for each agent) and a `partialData` object that incrementally populates the "Analysis Results" UI with confidence badges.
 
-### Model Selection
-For Phase 2, we have chosen **llava-1.5-7b** (or alternatives like Qwen2-VL-7B) via an Ollama local deployment integration. 
-* **Why**: It is open-source, supports vision and structured output tasks, operates under the 8B parameter threshold, and allows cost-efficient local or low-tier cloud inference without relying on proprietary APIs like OpenAI or Gemini.
-
-### Replacing the VLM Provider
-To swap out the LLM provider, you simply need to create a new class extending `BaseVisionModel` in `packages/ai-agents/ai_agents/models/llm_provider.py` and pass it to the `NutritionScannerWorkflow`.
-
-```python
-# Example: Using a custom Qwen provider
-class QwenVisionModel(BaseVisionModel):
-    async def analyze_image(self, image_bytes, prompt, schema=None):
-        # Implementation here
-        pass
-
-workflow = NutritionScannerWorkflow(model=QwenVisionModel())
-```
-
-## Repository Structure
-
-```
-nutrition-scanner/
-├── apps/
-│   ├── web/                # Next.js frontend
-│   └── api/                # FastAPI backend
-├── packages/
-│   ├── ai-agents/          # Mock AI pipeline & interfaces
-│   ├── shared-types/       # Shared TypeScript types
-│   └── config/             # Shared tooling config
-├── docker-compose.yml
-└── README.md
-```
-
-## Setup & Running Instructions
-
-### Prerequisites
-* Docker and Docker Compose installed.
-
-### Environment Variables
-For local Docker development, no `.env` file is strictly required as defaults are provided in `docker-compose.yml`.
-If running natively:
-* `API_URL` (Frontend): URL to the backend API (default: `http://127.0.0.1:8000`)
-* `DATABASE_URL` (Backend): Connection string for PostgreSQL (default: `sqlite+aiosqlite:///./test.db` for local mock)
-
-### Run with Docker
-
-1. Clone the repository and navigate to the root directory.
-2. Build and start the services:
-
-   ```bash
-   docker compose up --build
-   ```
-
-3. Access the application:
-   * Frontend Web UI: [http://localhost:3000](http://localhost:3000)
-   * FastAPI Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### Features in Phase 1
-- Modular monorepo setup.
-- Image upload and preview UI.
-- Simulated processing endpoint reflecting real AI output schemas.
-- Confidence scores generated for every prediction field.
-- Database schema setup for tracking AI processing results.
+### Observability Strategy
+Every agent execution logs its latency. The timeline events emitted over SSE contain `latency_ms` properties, which are then rendered on the client timeline. The overall pipeline latency, errors, and success rates are recorded in the PostgreSQL `jobs` table to feed into future dashboard analytics.

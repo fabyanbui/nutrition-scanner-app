@@ -8,3 +8,5 @@ alembic==1.13.1
 langgraph
 httpx
 langchain-core
+sse-starlette==2.1.0
+Pillow

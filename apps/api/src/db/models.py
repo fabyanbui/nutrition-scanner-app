@@ -4,8 +4,18 @@ import datetime
 
 Base = declarative_base()
 
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(String, primary_key=True, index=True)
+    status = Column(String, default="queue") # queue, running, completed, failed
+    progress = Column(Float, default=0.0)
+    result_json = Column(JSON, nullable=True)
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
 class FoodAnalysis(Base):
-    __tablename__ = "food_analysis"
 
     id = Column(Integer, primary_key=True, index=True)
     image_url = Column(String, nullable=True)
