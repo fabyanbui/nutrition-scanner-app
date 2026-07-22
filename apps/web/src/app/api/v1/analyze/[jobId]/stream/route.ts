@@ -28,6 +28,8 @@ export async function GET(
     } catch (err) {
       console.warn("Stream proxy to FastAPI failed:", err);
     }
+
+    return NextResponse.json({ detail: "Job stream not found" }, { status: 404 });
   }
 
   // Handle local simulated agent pipeline stream
